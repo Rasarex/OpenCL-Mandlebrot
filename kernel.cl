@@ -14,22 +14,29 @@ __kernel void mandlebrot(__global uchar *RGB,__global struct Dims *dims)
   float fid = (float)id;
   int w2 = w*w;
   float col = (float)(id %w);
-  float p_x = (col)/((float)h) * (dims->xmax - dims->xmin ) +  (dims->xmin)  ;
-  float p_y = ((float)fid) /((float)w2)*(dims->ymax - dims->ymin ) +  (dims->ymin)  ;
-  float x = 0.0;
-  float y = 0.0;
-  float next_x = 0.0;
-  float next_y = 0.0;
-  int i = 0;
+  int sum = 0;
+  int sub_sample_size  = 3;
+  for(int s = 0; s < sub_sample_size * sub_sample_size; s += 1){
+    float sx = (float)(s % sub_sample_size) - 0.5;
+    float sy = (float)(s / sub_sample_size) - 0.5;
+    float p_x = (col +sx)/((float)h)  +  (dims->xmin);
+    float p_y = ((float)fid +sy) /((float)w2) +  (dims->ymin);
+    float x = 0.0;
+    float y = 0.0;
+    float next_x = 0.0;
+    float next_y = 0.0;
+    int i = 0;
 
-  for(; i < 256; i += 1){
-    next_x = x*x - y*y + p_x;
-    next_y = x*y + x*y + p_y;
-    if(next_x*next_x + next_y*next_y > 4) break;
-    x = next_x;
-    y = next_y;
+    for(; i < 256; i += 1){
+      next_x = x*x - y*y + p_x;
+      next_y = x*y + x*y + p_y;
+      if(next_x*next_x + next_y*next_y > 4) break;
+      x = next_x;
+      y = next_y;
+    }
+    sum += i;
   }
-  float val = (float)(i & 0xff);
+  float val = (float)(sum/(sub_sample_size * sub_sample_size) & 0xff);
   RGB[3*id] = sqrt(val/256)*256;
   RGB[3*id + 1] = 0x00;//(char)((id >> 8) % 0xff);
   RGB[3*id + 2] = 0x00;//(char)(id % 0xff);

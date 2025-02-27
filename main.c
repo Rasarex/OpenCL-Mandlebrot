@@ -106,7 +106,7 @@ int main()
     /*Create Buffer Object */
     float cordx = -0.16498674718560924;
     float cordy = -1.0394110666891514;
-    float zoom = 14;
+    float zoom = 1;
     Cmobj = clCreateBuffer(context, CL_MEM_READ_WRITE, size, NULL, &ret);
     fprintf(stderr, "%d %d \r\n",ret,__LINE__);
     Args = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(struct Dims),  NULL, &ret);
