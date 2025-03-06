@@ -7,6 +7,8 @@
 // OpenCL includes
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #include <CL/cl.h>
+#define SPNG_STATIC
+#include "spng/spng.h"
 
 #ifdef __unix__
 #include <assert.h>
@@ -38,45 +40,15 @@ uint8_t getByte16(uint16_t i, uint32_t off) {
     }                                                                          \
   } while (0)
 
-uint32_t BMP_HEADER(char *buff, uint32_t size, uint16_t height,
-                    uint16_t width) {
-
-  buff[0x00] = 'B';
-  buff[0x01] = 'M';
-  buff[0x02] = getByte(size, 0);
-  buff[0x03] = getByte(size, 1);
-  buff[0x04] = getByte(size, 2);
-  buff[0x05] = getByte(size, 3);
-
-  buff[0x0A] = 0x20;
-  buff[0x0B] = 0;
-  buff[0x0C] = 0;
-  buff[0x0D] = 0;
-
-  buff[0x0E] = 12;
-  buff[0x0F] = 0;
-  buff[0x10] = 0;
-  buff[0x11] = 0;
-
-  buff[0x12] = getByte16(width, 0);
-  buff[0x13] = getByte16(width, 1);
-  buff[0x14] = getByte16(height, 0);
-  buff[0x15] = getByte16(height, 1);
-
-  buff[0x16] = 1;
-  buff[0x17] = 0;
-  buff[0x18] = 24;
-  buff[0x19] = 0;
-  return 0x20;
-}
 struct Dims {
-  float xmin;
-  float xmax;
-  float ymin;
-  float ymax;
+  double xmin;
+  double xmax;
+  double ymin;
+  double ymax;
   int width;
   int height;
-  float zoom;
+  double zoom;
+  int zoom_level;
 };
 int main() {
   cl_platform_id platform_id = NULL;
@@ -92,8 +64,8 @@ int main() {
   cl_uint ret_num_platforms;
   cl_int ret;
 
-  int width = 7680;
-  int height = 4320;
+  int width = 7680 ;
+  int height = 4320 ;
   char *C;
   int size = 3 * width * height;
   C = (char *)calloc(size, sizeof(char));
@@ -129,25 +101,27 @@ int main() {
   errorf("%d at line %d \r\n", ret, __LINE__);
 
   /*Create Buffer Object */
-  float cordx = -0.16498674718560924;
-  float cordy = -1.0394110666891514;
-  float zoom =1   ;
+  double cordx = -0.16498674718560924;
+  double cordy = -1.0394110666891514;
+  double zoom_level = 15;
+  double zoom = powf(0.75,zoom_level) ;
   Cmobj = clCreateBuffer(context, CL_MEM_READ_WRITE, size, NULL, &ret);
   errorf("%d at line %d \r\n", ret, __LINE__);
   Args = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(struct Dims), NULL,
                         &ret);
   struct Dims args;
-  float fwidth = (float)width;
-  float fheight = (float)height;
-  float ratio = fmaxf(fwidth, fheight) / fminf(fwidth, fheight);
-  args.xmin = (-ratio) / zoom + cordx;
-  args.xmax = (ratio) / zoom + cordx; //-0.80;
-  args.ymin = (-1.0) / zoom - cordy;  // ( ((float)height)/zoom/2.0) + cordy;
-  args.ymax =
-      (1.0) / zoom - cordy; //(((float)height)/zoom/2.0) - cordy;//-0.80;
+  double fwidth = (double)width;
+  double fheight = (double)height;
+  double ratio = fmax(fwidth, fheight) / fmin(fwidth, fheight);
+  args.xmin = (-ratio)* zoom  + cordx;
+  args.xmax = (ratio)* zoom    + cordx ;
+  args.ymin = (-1.0 ) *zoom + cordy ;  
+  args.ymax = (1.0 )*zoom + cordy ;
   args.width = width;
   args.height = height;
   args.zoom = zoom;
+  args.zoom_level = zoom_level;
+  printf("%f %f",args.xmin, args.xmax);
 
   /* Copy input data to the memory buffer */
   ret = clEnqueueWriteBuffer(command_queue, Args, CL_TRUE, 0,
@@ -202,12 +176,35 @@ int main() {
 
   char *header = (char *)calloc(0x20, sizeof(char));
 
+  struct spng_ihdr ihdr = {0};
+  spng_ctx *ctx = NULL;
+  ctx = spng_ctx_new(SPNG_CTX_ENCODER);
+  spng_set_option(ctx,SPNG_ENCODE_TO_BUFFER,1);
+  ihdr.width = width;
+  ihdr.height = height;
+  ihdr.color_type  = SPNG_COLOR_TYPE_TRUECOLOR;
+  ihdr.bit_depth = 8;
+  spng_set_ihdr(ctx,&ihdr);
+  int fmt = SPNG_FMT_PNG;
+  int png_ret = spng_encode_image(ctx, C, size, fmt, SPNG_ENCODE_FINALIZE);
+  if(png_ret){
+    printf("spng_encode_image() error: %s\n",spng_strerror(png_ret));
+  }
+  size_t png_size;
+  void *png_buf = NULL;
+
+  /* Get the internal buffer of the finished PNG */
+  png_buf = spng_get_png_buffer(ctx, &png_size, &png_ret);
+
+  if(png_buf == NULL)
+  {
+      printf("spng_get_png_buffer() error: %s\n", spng_strerror(ret));
+  } 
+  
   /* Display Results */
   FILE *f;
-  err = fopen_s(&f, "img.bmp", "wb");
-  BMP_HEADER(header, size, height, width);
-  fwrite(header, sizeof(char), 0x20, f);
-  fwrite(C, sizeof(char), size, f);
+  err = fopen_s(&f, "mandlebrot.png", "wb");
+  fwrite(png_buf, sizeof(char), png_size, f);
   fclose(f);
 
   /* Finalization */
@@ -221,6 +218,7 @@ int main() {
   ret = clReleaseContext(context);
 
   free(source_str);
+  free(png_buf);
 
   free(header);
   free(C);

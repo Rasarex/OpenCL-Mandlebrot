@@ -48,6 +48,8 @@
 .tmp_versions/
 build/*
 *.bmp
+*.png
+spng/*
 modules.order
 Module.symvers
 Mkfile.old
